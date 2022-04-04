@@ -39,7 +39,7 @@ const (
 type MsgDTO struct {
 	ScheduleHash string `json:"scheduleHash"`
 	MessageType  string `json:"messageType"`
-	SeatId       int    `json:"seatId"`
+	SeatId       string `json:"seatId"`
 	BookingId    int    `json:"bookingId"`
 }
 
