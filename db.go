@@ -80,14 +80,14 @@ func (d *DB) run(removeList chan *[]SeatState) {
 		case query := <-d.updatePaid:
 			var seat SeatState
 			//find the seat first
-			db.First(&seat, "schedule_id = ? AND seat_id = ?", query.scheduleHash, query.seatId)
+			db.First(&seat, "schedule_hash = ? AND seat_id = ?", query.scheduleHash, query.seatId)
 			db.Model(&seat).Updates(map[string]interface{}{"Status": STATUS_PAID})
 		case query := <-d.updateBooking:
 			var seat SeatState
 			db.First(&seat, "schedule_hash = ? AND seat_id = ?", query.scheduleHash, query.seatId)
 			db.Model(&seat).Updates(map[string]interface{}{"booking_id": query.bookingId})
 		case query := <-d.delete:
-			db.Delete(&SeatState{}, "schedule_id = ? AND seat_id = ?", query.scheduleHash, query.seatId)
+			db.Delete(&SeatState{}, "schedule_hash= ? AND seat_id = ?", query.scheduleHash, query.seatId)
 		}
 
 	}
