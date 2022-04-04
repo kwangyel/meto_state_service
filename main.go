@@ -32,7 +32,7 @@ const (
 	TICKER_UNIT = time.Minute
 
 	// expiry time
-	EXP_TIME = 1
+	EXP_TIME = 7
 	EXP_UNIT = time.Minute
 )
 
