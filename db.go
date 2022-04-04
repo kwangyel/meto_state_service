@@ -9,37 +9,41 @@ import (
 )
 
 type SeatState struct {
-	SeatId     int
-	ScheduleId int
-	Status     string
+	SeatId       int
+	ScheduleHash string
+	BookingId    int
+	Status       string
 	gorm.Model
 }
 
 type queryDTO struct {
-	scheduleId int
-	status     string
-	msgType    string
-	seatId     int
-	id         int
+	bookingId    int
+	scheduleHash string
+	status       string
+	msgType      string
+	seatId       int
+	id           int
 }
 type DB struct {
-	create     chan queryDTO
-	updatePaid chan queryDTO
-	delete     chan queryDTO
-	checkTime  chan bool
+	create        chan queryDTO
+	updatePaid    chan queryDTO
+	updateBooking chan queryDTO
+	delete        chan queryDTO
+	checkTime     chan bool
 }
 
 func newDB() *DB {
 	return &DB{
-		create:     make(chan queryDTO),
-		updatePaid: make(chan queryDTO),
-		delete:     make(chan queryDTO),
-		checkTime:  make(chan bool),
+		create:        make(chan queryDTO),
+		updatePaid:    make(chan queryDTO),
+		updateBooking: make(chan queryDTO),
+		delete:        make(chan queryDTO),
+		checkTime:     make(chan bool),
 	}
 }
 
 func (d *DB) run(removeList chan *[]SeatState) {
-	dsn := "root:323395kt@tcp(127.0.0.1:3306)/meto_state?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := "app:*meto@2021#@tcp(127.0.0.1:3306)/meto_state?charset=utf8mb4&parseTime=True&loc=Local"
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Println("error connection to database")
@@ -72,14 +76,18 @@ func (d *DB) run(removeList chan *[]SeatState) {
 			}
 		case query := <-d.create:
 			// log.Println("creating the entry %v", query)
-			db.Create(&SeatState{ScheduleId: query.scheduleId, SeatId: query.seatId, Status: STATUS_UNPAID})
+			db.Create(&SeatState{ScheduleHash: query.scheduleHash, SeatId: query.seatId, Status: STATUS_UNPAID})
 		case query := <-d.updatePaid:
 			var seat SeatState
 			//find the seat first
-			db.First(&seat, "schedule_id = ? AND seat_id = ?", query.scheduleId, query.seatId)
+			db.First(&seat, "schedule_id = ? AND seat_id = ?", query.scheduleHash, query.seatId)
 			db.Model(&seat).Updates(map[string]interface{}{"Status": STATUS_PAID})
+		case query := <-d.updateBooking:
+			var seat SeatState
+			db.First(&seat, "schedule_hash = ? AND seat_id = ?", query.scheduleHash, query.seatId)
+			db.Model(&seat).Updates(map[string]interface{}{"booking_id": query.bookingId})
 		case query := <-d.delete:
-			db.Delete(&SeatState{}, query.id)
+			db.Delete(&SeatState{}, "schedule_id = ? AND seat_id = ?", query.scheduleHash, query.seatId)
 		}
 
 	}

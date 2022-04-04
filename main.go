@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	ON_LOCK         = "ON_LOCK"
-	ON_BOOK         = "ON_BOOK"
-	ON_LOCK_LEAVE   = "LOCK_LEAVE"
-	ON_LOCK_CONFIRM = "LOCK_CONFIRM"
-	ON_LOCK_CANCEL  = "LOCK_CANCEL"
+	ON_LOCK            = "ON_LOCK"
+	ON_BOOK            = "ON_BOOK"
+	ON_LOCK_LEAVE      = "LOCK_LEAVE"
+	ON_LOCK_CONFIRM    = "LOCK_CONFIRM"
+	ON_LOCK_CANCEL     = "LOCK_CANCEL"
+	ON_BOOKING_CREATED = "ON_BOOKING_CREATED"
 
 	CREATE = "CREATE"
 	UPDATE = "UPDATE"
@@ -36,9 +37,10 @@ const (
 )
 
 type MsgDTO struct {
-	RoomId      string `json:"roomId"`
-	MessageType string `json:"messageType"`
-	SeatId      string `json:"seatId"`
+	ScheduleHash string `json:"scheduleHash"`
+	MessageType  string `json:"messageType"`
+	SeatId       int    `json:"seatId"`
+	BookingId    int    `json:"bookingId"`
 }
 
 var addr = flag.String("addr", ":9090", "http service address")
@@ -61,6 +63,7 @@ func main() {
 	router := gin.New()
 
 	router.GET("/state-service/", func(c *gin.Context) {
+		log.Println("health pinged")
 		c.JSON(200, "OK")
 	})
 
@@ -157,30 +160,35 @@ func amqpThread(remoteList chan *[]SeatState, dbm *DB) {
 				continue
 			}
 			switch msgType := mqMsg.MessageType; msgType {
+			case ON_BOOKING_CREATED:
+				seatId, err := strconv.Atoi(mqMsg.SeatId)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				dbm.updateBooking <- queryDTO{scheduleHash: mqMsg.ScheduleHash, bookingId: mqMsg.BookingId, seatId: seatId}
 			case ON_BOOK:
-				scheduleId, err := strconv.Atoi(mqMsg.RoomId)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
 				seatId, err := strconv.Atoi(mqMsg.SeatId)
 				if err != nil {
 					log.Println(err)
 					continue
 				}
-				dbm.updatePaid <- queryDTO{scheduleId: scheduleId, seatId: seatId}
+				dbm.updatePaid <- queryDTO{scheduleHash: mqMsg.ScheduleHash, seatId: seatId}
+			case ON_LOCK_CANCEL:
+				seatId, err := strconv.Atoi(mqMsg.SeatId)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				dbm.delete <- queryDTO{scheduleHash: mqMsg.ScheduleHash, seatId: seatId}
+
 			case ON_LOCK_CONFIRM:
-				scheduleId, err := strconv.Atoi(mqMsg.RoomId)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
 				seatId, err := strconv.Atoi(mqMsg.SeatId)
 				if err != nil {
 					log.Println(err)
 					continue
 				}
-				dbm.create <- queryDTO{scheduleId: scheduleId, seatId: seatId, status: STATUS_UNPAID}
+				dbm.create <- queryDTO{scheduleHash: mqMsg.ScheduleHash, seatId: seatId, status: STATUS_UNPAID}
 				// dbm.get <- queryDTO{scheduleId: scheduleId, seatId: seatId, status: STATUS_UNPAID}
 			}
 		}
@@ -190,11 +198,10 @@ func amqpThread(remoteList chan *[]SeatState, dbm *DB) {
 		select {
 		case mqmsg := <-remoteList:
 			for _, item := range *mqmsg {
-				scheduleId := strconv.Itoa(item.ScheduleId)
 				seatId := strconv.Itoa(item.SeatId)
-				dbm.delete <- queryDTO{scheduleId: item.ScheduleId, id: int(item.ID), seatId: item.SeatId}
+				dbm.delete <- queryDTO{scheduleHash: item.ScheduleHash, id: int(item.ID), seatId: item.SeatId}
 
-				b, err := json.Marshal(MsgDTO{RoomId: scheduleId, MessageType: ON_LOCK_CANCEL, SeatId: seatId})
+				b, err := json.Marshal(MsgDTO{ScheduleHash: item.ScheduleHash, MessageType: ON_LOCK_CANCEL, SeatId: seatId})
 				if err != nil {
 					panic(err)
 				}
