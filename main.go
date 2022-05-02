@@ -72,32 +72,6 @@ func main() {
 
 	router.Run("0.0.0.0" + *addr)
 
-	for {
-		select {
-		case mqmsg := <-removeList:
-			for _, item := range *mqmsg {
-				seatId := strconv.Itoa(item.SeatId)
-				postBody, _ := json.Marshal(map[string]string{
-					"scheduleHas": item.ScheduleHash,
-					"seatNumber":  seatId,
-					"token":       "123",
-				})
-
-				responseBody := bytes.NewBuffer(postBody)
-				resp, err := http.Post("http://127.0.0.1:3000/bookings/timeout", "application/json", responseBody)
-				if err != nil {
-					log.Printf("[Error] Http post request error %v ", err)
-				}
-				defer resp.Body.Close()
-				body, err := ioutil.ReadAll(resp.body)
-				if err != nil {
-					log.Printf("[Error] Http post request error %v ", err)
-				}
-				sb := string(body)
-				log.Printf("[Debug] Timeout http request. %v", sb)
-			}
-		}
-	}
 }
 
 func timerThread(dbm *DB) {
@@ -230,20 +204,30 @@ func amqpThread(remoteList chan *[]SeatState, dbm *DB) {
 			for _, item := range *mqmsg {
 				seatId := strconv.Itoa(item.SeatId)
 				dbm.delete <- queryDTO{scheduleHash: item.ScheduleHash, id: int(item.ID), seatId: item.SeatId}
-
-				postBody, _ := json.Marshal(map[string]string{
-					"scheduleHas": item.ScheduleHash,
-					"seatNumber":  seatId,
-					"token":       "123",
-				})
-
-				responseBody := bytes.NewBuffer(postBody)
-				resp, err := http.post("http://127.0.0.1:3000/bookings/timeout", "application/json", responseBody)
-
 				b, err := json.Marshal(MsgDTO{ScheduleHash: item.ScheduleHash, MessageType: ON_LOCK_CANCEL, SeatId: seatId})
 				if err != nil {
 					panic(err)
 				}
+
+				postBody, _ := json.Marshal(map[string]string{
+					"scheduleHash": item.ScheduleHash,
+					"seatNumber":   seatId,
+					"token":        "123",
+				})
+
+				responseBody := bytes.NewBuffer(postBody)
+				resp, err := http.Post("http://127.0.0.1:3000/bookings/timeout", "application/json", responseBody)
+				if err != nil {
+					log.Printf("[Error] Http post request error %v ", err)
+				}
+				defer resp.Body.Close()
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					log.Printf("[Error] Http post request error %v ", err)
+				}
+				sb := string(body)
+				log.Printf("[Debug] Timeout http request. %v", sb)
+
 				channelMq.Publish("meto", "", false, false, amqp.Publishing{
 					DeliveryMode: 2,
 					ContentType:  "text/plain",
